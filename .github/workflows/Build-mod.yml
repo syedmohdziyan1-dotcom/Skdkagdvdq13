@@ -8,15 +8,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.2.1'
 
@@ -25,31 +29,56 @@ jobs:
           unzip -q .github/workflows/beacon-printer-fabric-1.21.11-rebuild-source.zip -d .
           test -f beacon-printer/build.gradle
 
-      - name: Fix repository configuration
+      - name: Fix Gradle repository configuration
         working-directory: beacon-printer
         run: |
-          find . -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i 's/PREFER_SETTINGS/PREFER_PROJECT/g' {} +
-          if grep -R "PREFER_SETTINGS" . --include="*.gradle" --include="*.gradle.kts"; then
-            echo "Repository setting was not replaced"
-            exit 1
-          fi
+          python3 <<'PY'
+          from pathlib import Path
+
+          for pattern in ("*.gradle", "*.gradle.kts"):
+              for file in Path(".").rglob(pattern):
+                  if ".gradle" in file.parts:
+                      continue
+
+                  content = file.read_text()
+
+                  updated = content.replace(
+                      "RepositoriesMode.PREFER_SETTINGS",
+                      "RepositoriesMode.PREFER_PROJECT"
+                  ).replace(
+                      "RepositoriesMode.FAIL_ON_PROJECT_REPOS",
+                      "RepositoriesMode.PREFER_PROJECT"
+                  ).replace(
+                      "PREFER_SETTINGS",
+                      "PREFER_PROJECT"
+                  )
+
+                  if updated != content:
+                      file.write_text(updated)
+                      print(f"Updated: {file}")
+
+          print("Gradle repository configuration check completed.")
+          PY
+
+      - name: Diagnose Gradle settings
+        working-directory: beacon-printer
+        run: |
+          echo "=== Gradle settings files ==="
+          find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
+
+          echo "=== Settings contents ==="
+          find . -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -exec sh -c '
+            echo "FILE: $1"
+            cat "$1"
+          ' _ {} \;
 
       - name: Compile mod
         working-directory: beacon-printer
-        run: gradle build --no-daemon
+        run: gradle build --no-daemon --stacktrace
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload compiled JAR
+        uses: actions/upload-artifact@v4
         with:
           name: Beacon-Printer-JAR
           path: beacon-printer/build/libs/*.jar
           if-no-files-found: error
-      - name: Diagnose Gradle settings
-        working-directory: beacon-printer
-        run: |
-          echo "=== Project files ==="
-          find . -maxdepth 3 -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -print
-          echo "=== Settings file contents ==="
-          for f in $(find . -maxdepth 3 -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \)); do
-            echo "=== $f ==="
-            cat "$f"
-          done
