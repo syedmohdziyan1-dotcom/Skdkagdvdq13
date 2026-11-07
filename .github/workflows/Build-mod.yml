@@ -25,10 +25,14 @@ jobs:
           unzip -q .github/workflows/beacon-printer-fabric-1.21.11-rebuild-source.zip -d .
           test -f beacon-printer/build.gradle
 
-      - name: Fix Loom repository configuration
+      - name: Fix repository configuration
         working-directory: beacon-printer
         run: |
-          sed -i 's/RepositoriesMode.PREFER_SETTINGS/RepositoriesMode.PREFER_PROJECT/g' settings.gradle
+          find . -type f \( -name "*.gradle" -o -name "*.gradle.kts" \) -exec sed -i 's/PREFER_SETTINGS/PREFER_PROJECT/g' {} +
+          if grep -R "PREFER_SETTINGS" . --include="*.gradle" --include="*.gradle.kts"; then
+            echo "Repository setting was not replaced"
+            exit 1
+          fi
 
       - name: Compile mod
         working-directory: beacon-printer
